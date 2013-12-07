@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <netinet/in.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -12,51 +13,59 @@
 #include "sr_protocol.h"
 #include "sr_utils.h"
 
+void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t type, uint8_t code) {
+  /* Create new buffer */
+  unsigned int packetSize = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t);
+  uint8_t * buf = (uint8_t *)malloc(packetSize);
+  uint8_t * oldBuf = pkt->buf;
+
+  /* Create the ethernet header */
+  sr_ethernet_hdr_t * pktEth = (sr_ethernet_hdr_t *)(oldBuf);
+  uint8_t dhost[ETHER_ADDR_LEN];
+  memcpy(dhost, pktEth->ether_dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
+  memcpy(pktEth->ether_dhost, pktEth->ether_shost, sizeof(uint8_t)*ETHER_ADDR_LEN);
+  memcpy(pktEth->ether_shost, dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
+  pktEth->ether_type = ethertype_ip;
+
+  memcpy(buf, pktEth, sizeof(sr_ethernet_hdr_t));
+
+  /* Create the ip header */
+  sr_arp_hdr_t * pktArpHdr = (sr_arp_hdr_t *)(oldBuf + sizeof(sr_ethernet_hdr_t));
+  sr_ip_hdr_t * pktIpHdr = (sr_ip_hdr_t *)malloc(sizeof(sr_ip_hdr_t));
+  *pktIpHdr = (sr_ip_hdr_t){.ip_v = 4, .ip_hl = 4, .ip_tos = 0, 
+			    .ip_len = sizeof(sr_ip_hdr_t), .ip_id = 0, .ip_off = IP_DF, 
+			    .ip_ttl = 64, .ip_p = ip_protocol_icmp, .ip_sum = 0, 
+			    .ip_dst = pktArpHdr->ar_sip, .ip_src = pktArpHdr->ar_tip};
+  pktIpHdr->ip_sum = cksum(pktIpHdr, sizeof(sr_ip_hdr_t));
+
+  memcpy(buf + sizeof(sr_ethernet_hdr_t), pktIpHdr, sizeof(sr_ip_hdr_t));
+  free(pktIpHdr);
+
+  /* Create the icmp headr */
+  sr_icmp_hdr_t * icmpHdr = (sr_icmp_hdr_t *)malloc(sizeof(sr_icmp_hdr_t));
+  *icmpHdr = (sr_icmp_hdr_t){.icmp_type = type, .icmp_code = code, .icmp_sum = 0};
+  icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
+  
+  memcpy(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t), icmpHdr, sizeof(sr_icmp_hdr_t));
+  free(icmpHdr);
+
+  sr_send_packet(sr, buf, packetSize, pkt->iface);
+}
+
 /* If code causes any problems, comment out the function call in sr_arpcache_sweepreqs */
 void handle_arpreq(struct sr_instance *sr, struct sr_arpreq *req) {
+  assert(sr);
+  assert(req);
+  
+  struct sr_packet * pkt = req->packets;
+  struct sr_packet * nextPkt;
   /* handle arp request */
   if(difftime(time(NULL), req->sent) > 1.0) {
     if(req->times_sent >= 5) {
       
-      struct sr_packet * pkt = req->packets;
-      struct sr_packet * nextPkt;
       while(pkt != NULL) {
 	nextPkt = pkt->next;
-
-	/* Create new buffer */
-	uint8_t * buf = (uint8_t *)malloc(sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t));
-	uint8_t * oldBuf = pkt->buf;
-
-	/* Create the ethernet header */
-	sr_ethernet_hdr_t * pktEth = (sr_ethernet_hdr_t *)(oldBuf);
-	uint8_t dhost[ETHER_ADDR_LEN];
-	memcpy(dhost, pktEth->ether_dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
-	memcpy(pktEth->ether_dhost, pktEth->ether_shost, sizeof(uint8_t)*ETHER_ADDR_LEN);
-	memcpy(pktEth->ether_shost, dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
-	pktEth->ether_type = ethertype_ip;
-
-	memcpy(buf, pktEth, sizeof(sr_ethernet_hdr_t));
-	oldBuf += sizeof(sr_ethernet_hdr_t);
-
-	/* Create the ip header */
-	sr_ip_hdr_t * pktIpHdr = (sr_ip_hdr_t *)(oldBuf);
-	pktIpHdr->ip_p = ip_protocol_icmp;
-	uint32_t pktSrc = pktIpHdr->ip_src;
-	pktIpHdr->ip_src = pktIpHdr->ip_dst;
-	pktIpHdr->ip_dst = pktSrc;
-	pktIpHdr->ip_sum = cksum(pktIpHdr, sizeof(sr_ip_hdr_t));
-
-	memcpy(buf + sizeof(sr_ethernet_hdr_t), pktIpHdr, sizeof(sr_ip_hdr_t));
-
-	/* Create the icmp headr */
-	sr_icmp_hdr_t * icmpHdr = (sr_icmp_hdr_t*)malloc(sizeof(sr_icmp_hdr_t));
-	icmpHdr->icmp_type = 3;
-	icmpHdr->icmp_code = 1;
-	icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
-
-	memcpy(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t), icmpHdr, sizeof(sr_icmp_hdr_t));
-
-	sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
+	send_icmp_message(sr, pkt, 3, 1);
 	pkt = nextPkt;
       }
 
@@ -65,7 +74,13 @@ void handle_arpreq(struct sr_instance *sr, struct sr_arpreq *req) {
   }
   else {
     /* send arp request */
-    req->sent= time(NULL);
+    /*TODO might be wrong*/
+    while(pkt != NULL) {
+      nextPkt = pkt->next;
+      sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
+      pkt = nextPkt;
+    }
+    req->sent = time(NULL);
     req->times_sent++;
   }
 }
@@ -76,7 +91,8 @@ void handle_arpreq(struct sr_instance *sr, struct sr_arpreq *req) {
   See the comments in the header file for an idea of what it should look like.
 */
 void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
-  
+  assert(sr);
+
   struct sr_arpreq * request = sr->cache.requests;\
   struct sr_arpreq * nextRequest;
   while(request != NULL) {
