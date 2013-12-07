@@ -13,7 +13,7 @@
 
 #include <stdio.h>
 #include <assert.h>
-
+#include <string.h>
 
 #include "sr_if.h"
 #include "sr_rt.h"
@@ -71,6 +71,11 @@ uint16_t arpop(uint8_t *packet) {
         return ntohs(ahdr->ar_op);
 }
 
+uint16_t ip_cksum(uint8_t *buf) {
+      sr_ip_hdr_t *iphdr = (sr_ip_hdr_t *)(buf);
+      return ntohs(iphdr->ip_sum);
+}
+
 void sr_handlepacket(struct sr_instance* sr,
         uint8_t * packet/* lent */,
         unsigned int len,
@@ -86,8 +91,11 @@ void sr_handlepacket(struct sr_instance* sr,
     int minlength = sizeof(sr_ethernet_hdr_t);
     if (len < minlength) {
         fprintf(stderr , "Failed to parse ETHERNET header, insufficient length\n");
+        return;
     }
 
+
+    sr_ethernet_hdr_t* etherhdr = (sr_ethernet_hdr_t*)packet;
     uint16_t ethtype = ethertype(packet);
 
     if (ethtype == ethertype_ip) { /* IP */
@@ -99,6 +107,11 @@ void sr_handlepacket(struct sr_instance* sr,
 
         /* Handle IP packet here */
         print_hdrs(packet, len);
+
+        if (cksum(packet, len) != ip_cksum(packet + sizeof(sr_ethernet_hdr_t))) {
+            fprintf(stderr , "Failed IP checksum, incorrect matchh\n");
+            return;
+        }
 
         uint8_t ip_proto = ip_protocol(packet + sizeof(sr_ethernet_hdr_t));
         if (ip_proto == ip_protocol_icmp) { /* ICMP */
@@ -118,10 +131,35 @@ void sr_handlepacket(struct sr_instance* sr,
             print_hdrs(packet, len);
 
             uint16_t opcode = arpop(packet + sizeof(sr_ethernet_hdr_t));
+            sr_arp_hdr_t* arphdr = (sr_arp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
             if (opcode == arp_op_request) {
+                fprintf(stderr, "Who is ");
+                print_addr_ip_int(ntohl(arphdr->ar_tip));
 
+                printf("Packet interface: %s\n", interface);
+                struct sr_if* iface = sr_get_interface(sr, interface);
+                sr_print_if(iface);
+                if(ntohl(iface->ip) == ntohl(arphdr->ar_tip)) {
+                    fprintf(stderr, "Reply: I am!\n");
+
+                    uint8_t tempetherhost[ETHER_ADDR_LEN];
+                    memcpy(tempetherhost, etherhdr->ether_dhost, sizeof(uint8_t) * ETHER_ADDR_LEN);
+                    memcpy(etherhdr->ether_dhost, etherhdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
+                    memcpy(etherhdr->ether_shost, tempetherhost, sizeof(uint8_t) * ETHER_ADDR_LEN);
+
+                    arphdr->ar_op = htons(arp_op_reply); 
+                    arphdr->ar_tip = arphdr->ar_sip;
+                    arphdr->ar_sip = htonl(iface->ip);
+                    memcpy(arphdr->ar_tha, arphdr->ar_sha, sizeof(char) * ETHER_ADDR_LEN);
+                    memcpy(arphdr->ar_sha, iface->addr, sizeof(char) * ETHER_ADDR_LEN);
+
+                    print_hdrs(packet, len);
+
+                    sr_send_packet(sr, packet, len, interface);
+                }
             } else if (opcode == arp_op_reply) {
-                
+                fprintf(stderr, "I am ");
+                print_addr_eth(arphdr->ar_tha);
             } else {
                 fprintf(stderr, "Unrecognized Arp Opcode: %d\n", opcode);
             }
@@ -131,9 +169,6 @@ void sr_handlepacket(struct sr_instance* sr,
         fprintf(stderr, "Unrecognized Ethernet Type: %d\n", ethtype);
     }
 
-    printf("Packet interface: %s\n", interface);
-    struct sr_if* iface = sr_get_interface(sr, interface);
-    sr_print_if(iface);
 
 }/* end sr_ForwardPacket */
 
