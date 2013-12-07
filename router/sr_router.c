@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
+#include <limits.h>
 
 #include "sr_if.h"
 #include "sr_rt.h"
@@ -130,13 +131,39 @@ void sr_handlepacket(struct sr_instance* sr,
                 }
 
                 switch (icmphdr->icmp_type) {
-                case 8:
-                    break;
                 default:
+                    fprintf(stderr, "Ignoring this ICMP message %d\n", icmphdr->icmp_type);
                     break;
                 }
             }
         }
+
+        /* Decrement TTL on ip header */
+        iphdr->ip_ttl--;
+        /* Recompute checksum */
+        iphdr->ip_sum = 0;
+        iphdr->ip_sum = cksum(iphdr, sizeof(sr_ip_hdr_t));
+
+
+        /* Find interface with longest prefix match for ip destination to forward to */
+        struct sr_rt* rt_match = NULL;
+        uint32_t longest_prefix = UINT_MAX;
+        struct sr_rt* rt_walker = sr->routing_table;
+
+        while(rt_walker) {
+            uint32_t prefix = (iphdr->ip_dst & (*(uint32_t*)&rt_walker->mask)) - (*(uint32_t*)&rt_walker->gw);
+            if(prefix < longest_prefix) { 
+                longest_prefix = prefix;
+                rt_match = rt_walker;
+            }
+            rt_walker = rt_walker->next;
+        }
+
+        
+
+        print_hdrs(packet, len);
+
+        /* sr_send_packet(sr, packet, len, interface); */
     }
     else if (ethtype == ethertype_arp) { /* ARP */
         minlength += sizeof(sr_arp_hdr_t);
