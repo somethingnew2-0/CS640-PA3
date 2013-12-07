@@ -10,6 +10,65 @@
 #include "sr_router.h"
 #include "sr_if.h"
 #include "sr_protocol.h"
+#include "sr_utils.h"
+
+/* If code causes any problems, comment out the function call in sr_arpcache_sweepreqs */
+void handle_arpreq(struct sr_instance *sr, struct sr_arpreq *req) {
+  /* handle arp request */
+  if(difftime(time(NULL), req->sent) > 1.0) {
+    if(req->times_sent >= 5) {
+      
+      struct sr_packet * pkt = req->packets;
+      struct sr_packet * nextPkt;
+      while(pkt != NULL) {
+	nextPkt = pkt->next;
+
+	/* Create new buffer */
+	uint8_t * buf = (uint8_t *)malloc(sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t));
+	uint8_t * oldBuf = pkt->buf;
+
+	/* Create the ethernet header */
+	sr_ethernet_hdr_t * pktEth = (sr_ethernet_hdr_t *)(oldBuf);
+	uint8_t dhost[ETHER_ADDR_LEN];
+	memcpy(dhost, pktEth->ether_dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
+	memcpy(pktEth->ether_dhost, pktEth->ether_shost, sizeof(uint8_t)*ETHER_ADDR_LEN);
+	memcpy(pktEth->ether_shost, dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
+	pktEth->ether_type = ethertype_ip;
+
+	memcpy(buf, pktEth, sizeof(sr_ethernet_hdr_t));
+	oldBuf += sizeof(sr_ethernet_hdr_t);
+
+	/* Create the ip header */
+	sr_ip_hdr_t * pktIpHdr = (sr_ip_hdr_t *)(oldBuf);
+	pktIpHdr->ip_p = ip_protocol_icmp;
+	uint32_t pktSrc = pktIpHdr->ip_src;
+	pktIpHdr->ip_src = pktIpHdr->ip_dst;
+	pktIpHdr->ip_dst = pktSrc;
+	pktIpHdr->ip_sum = cksum(pktIpHdr, sizeof(sr_ip_hdr_t));
+
+	memcpy(buf + sizeof(sr_ethernet_hdr_t), pktIpHdr, sizeof(sr_ip_hdr_t));
+
+	/* Create the icmp headr */
+	sr_icmp_hdr_t * icmpHdr = (sr_icmp_hdr_t*)malloc(sizeof(sr_icmp_hdr_t));
+	icmpHdr->icmp_type = 3;
+	icmpHdr->icmp_code = 1;
+	icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
+
+	memcpy(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t), icmpHdr, sizeof(sr_icmp_hdr_t));
+
+	sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
+	pkt = nextPkt;
+      }
+
+      sr_arpreq_destroy(&(sr->cache), req);
+    }
+  }
+  else {
+    /* send arp request */
+    req->sent= time(NULL);
+    req->times_sent++;
+  }
+}
 
 /* 
   This function gets called every second. For each request sent out, we keep
@@ -17,7 +76,16 @@
   See the comments in the header file for an idea of what it should look like.
 */
 void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
-    /* Fill this in */
+  
+  struct sr_arpreq * request = sr->cache.requests;\
+  struct sr_arpreq * nextRequest;
+  while(request != NULL) {
+    nextRequest = request->next;
+    
+    handle_arpreq(sr, request);
+    request = nextRequest;
+  }
+    
 }
 
 /* You should not need to touch the rest of this code. */
