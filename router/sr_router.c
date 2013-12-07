@@ -142,14 +142,12 @@ void sr_handlepacket(struct sr_instance* sr,
                 if(ntohl(iface->ip) == ntohl(arphdr->ar_tip)) {
                     fprintf(stderr, "Reply: I am!\n");
 
-                    uint8_t tempetherhost[ETHER_ADDR_LEN];
-                    memcpy(tempetherhost, etherhdr->ether_dhost, sizeof(uint8_t) * ETHER_ADDR_LEN);
                     memcpy(etherhdr->ether_dhost, etherhdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
-                    memcpy(etherhdr->ether_shost, tempetherhost, sizeof(uint8_t) * ETHER_ADDR_LEN);
+                    memcpy(etherhdr->ether_shost, iface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
 
                     arphdr->ar_op = htons(arp_op_reply); 
                     arphdr->ar_tip = arphdr->ar_sip;
-                    arphdr->ar_sip = htonl(iface->ip);
+                    arphdr->ar_sip = iface->ip;
                     memcpy(arphdr->ar_tha, arphdr->ar_sha, sizeof(char) * ETHER_ADDR_LEN);
                     memcpy(arphdr->ar_sha, iface->addr, sizeof(char) * ETHER_ADDR_LEN);
 
