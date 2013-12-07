@@ -18,7 +18,7 @@ from subprocess import Popen, STDOUT, PIPE
 
 IPBASE = '10.3.0.0/16'
 ROOTIP = '10.3.0.100/16'
-IPCONFIG_FILE = '/home/ubuntu/cs144_lab3/IP_CONFIG'
+IPCONFIG_FILE = '/home/mininet/CS640-PA3/IP_CONFIG'
 IP_SETTING={}
 
 class CS144Topo( Topo ):
@@ -26,12 +26,12 @@ class CS144Topo( Topo ):
     
     def __init__( self, *args, **kwargs ):
         Topo.__init__( self, *args, **kwargs )
-        server1 = self.add_host( 'server1' )
-        server2 = self.add_host( 'server2' )
-        router = self.add_switch( 'sw0' )
-        root = self.add_host( 'root', inNamespace=False )
+        server1 = self.addHost( 'server1' )
+        server2 = self.addHost( 'server2' )
+        router = self.addSwitch( 'sw0' )
+        root = self.addHost( 'root', inNamespace=False )
         for h in server1, server2, root: #client, root:
-            self.add_link( h, router )
+            self.addLink( h, router )
 
 
 class CS144Controller( Controller ):

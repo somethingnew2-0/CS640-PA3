@@ -13,10 +13,10 @@ pkill -9 sr
 RULE_INSTALLED=`sudo ip rule list | grep cs144 | awk '{print $3}'`
 if [ ! -n "$RULE_INSTALLED" ]; then 
   echo Installing source routing rule
-  sudo ip rule add from 10.0.1.0/24 table cs144
-  sudo ip route add default dev eth1 table cs144
+  sudo ip rule add from 10.0.1.0/24 table rtable
+  sudo ip route add default dev eth1 table rtable
   sudo ip route flush cache
-  sudo ip route list table cs144
+  sudo ip route list table rtable
   sudo ip rule list
 else
   echo routing table is ready
