@@ -12,6 +12,7 @@
  **********************************************************************/
 
 #include <stdio.h>
+#include <stdlib.h> 
 #include <assert.h>
 #include <string.h>
 #include <limits.h>
@@ -159,11 +160,25 @@ void sr_handlepacket(struct sr_instance* sr,
             rt_walker = rt_walker->next;
         }
 
-        
+        struct sr_if* iface = sr_get_interface(sr, rt_match->interface);
+
+    	/* Sending packet to next hop ip */
+        struct sr_arpentry* arpentry = sr_arpcache_lookup(&sr->cache, iphdr->ip_dst); 
+        if (arpentry == NULL) {
+            struct sr_arpreq* req = sr_arpcache_queuereq(&sr->cache, iphdr->ip_dst, packet, len, iface->name);
+	        handle_arpreq(sr, req);
+        } else {
+	        /*use next_hop_ip->mac mapping in entry to send the packet */
+            memcpy(etherhdr->ether_dhost, arpentry->mac, sizeof(uint8_t) * ETHER_ADDR_LEN);
+            memcpy(etherhdr->ether_shost, iface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+            
+            sr_send_packet(sr, packet, len, iface->name);
+
+            free(arpentry);
+        }
 
         print_hdrs(packet, len);
 
-        /* sr_send_packet(sr, packet, len, interface); */
     }
     else if (ethtype == ethertype_arp) { /* ARP */
         minlength += sizeof(sr_arp_hdr_t);
