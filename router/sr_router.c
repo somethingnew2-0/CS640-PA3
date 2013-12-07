@@ -66,19 +66,74 @@ void sr_init(struct sr_instance* sr)
  *
  *---------------------------------------------------------------------*/
 
+uint16_t arpop(uint8_t *packet) {
+        sr_arp_hdr_t *ahdr = (sr_arp_hdr_t *)packet;
+        return ntohs(ahdr->ar_op);
+}
+
 void sr_handlepacket(struct sr_instance* sr,
         uint8_t * packet/* lent */,
         unsigned int len,
         char* interface/* lent */)
 {
-  /* REQUIRES */
-  assert(sr);
-  assert(packet);
-  assert(interface);
+    /* REQUIRES */
+    assert(sr);
+    assert(packet);
+    assert(interface);
 
-  printf("*** -> Received packet of length %d \n",len);
+    printf("*** -> Received packet of length %d \n",len);
 
-  /* fill in code here */
+    int minlength = sizeof(sr_ethernet_hdr_t);
+    if (len < minlength) {
+        fprintf(stderr , "Failed to parse ETHERNET header, insufficient length\n");
+    }
+
+    uint16_t ethtype = ethertype(packet);
+
+    if (ethtype == ethertype_ip) { /* IP */
+        minlength += sizeof(sr_ip_hdr_t);
+        if (len < minlength) {
+            fprintf(stderr, "Failed to parse IP header, insufficient length\n");
+            return;
+        }
+
+        /* Handle IP packet here */
+        print_hdrs(packet, len);
+
+        uint8_t ip_proto = ip_protocol(packet + sizeof(sr_ethernet_hdr_t));
+        if (ip_proto == ip_protocol_icmp) { /* ICMP */
+            minlength += sizeof(sr_icmp_hdr_t);
+            if (len < minlength)
+                fprintf(stderr, "Failed to parse ICMP header, insufficient length\n");
+            /*else
+             * Handle ICMP packet here */
+        }
+    }
+    else if (ethtype == ethertype_arp) { /* ARP */
+        minlength += sizeof(sr_arp_hdr_t);
+        if (len < minlength) {
+            fprintf(stderr, "Failed to parse ARP header, insufficient length\n");
+        } else {
+            /* Handle ARP packet here */
+            print_hdrs(packet, len);
+
+            uint16_t opcode = arpop(packet + sizeof(sr_ethernet_hdr_t));
+            if (opcode == arp_op_request) {
+
+            } else if (opcode == arp_op_reply) {
+                
+            } else {
+                fprintf(stderr, "Unrecognized Arp Opcode: %d\n", opcode);
+            }
+        }
+    }
+    else {
+        fprintf(stderr, "Unrecognized Ethernet Type: %d\n", ethtype);
+    }
+
+    printf("Packet interface: %s\n", interface);
+    struct sr_if* iface = sr_get_interface(sr, interface);
+    sr_print_if(iface);
 
 }/* end sr_ForwardPacket */
 
