@@ -66,16 +66,6 @@ void sr_init(struct sr_instance* sr)
  *
  *---------------------------------------------------------------------*/
 
-uint16_t arpop(uint8_t *packet) {
-        sr_arp_hdr_t *ahdr = (sr_arp_hdr_t *)packet;
-        return ntohs(ahdr->ar_op);
-}
-
-uint16_t ip_cksum(uint8_t *buf) {
-      sr_ip_hdr_t *iphdr = (sr_ip_hdr_t *)(buf);
-      return ntohs(iphdr->ip_sum);
-}
-
 void sr_handlepacket(struct sr_instance* sr,
         uint8_t * packet/* lent */,
         unsigned int len,
@@ -107,19 +97,45 @@ void sr_handlepacket(struct sr_instance* sr,
 
         /* Handle IP packet here */
         print_hdrs(packet, len);
+        
+        sr_ip_hdr_t* iphdr = (sr_ip_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
+        uint16_t ipsum = iphdr->ip_sum;
+        iphdr->ip_sum = 0;
 
-        if (cksum(packet, len) != ip_cksum(packet + sizeof(sr_ethernet_hdr_t))) {
-            fprintf(stderr , "Failed IP checksum, incorrect matchh\n");
+        if (cksum(iphdr, sizeof(sr_ip_hdr_t)) != ipsum) {
+            fprintf(stderr , "Failed IP checksum, incorrect match\n");
             return;
+        } else {
+            iphdr->ip_sum = ipsum;
         }
 
         uint8_t ip_proto = ip_protocol(packet + sizeof(sr_ethernet_hdr_t));
         if (ip_proto == ip_protocol_icmp) { /* ICMP */
             minlength += sizeof(sr_icmp_hdr_t);
-            if (len < minlength)
+            if (len < minlength) {
                 fprintf(stderr, "Failed to parse ICMP header, insufficient length\n");
-            /*else
-             * Handle ICMP packet here */
+                return;
+            }
+            else {
+                /* Handle ICMP packet here */
+                sr_icmp_hdr_t* icmphdr = (sr_icmp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+                uint16_t icmpsum = icmphdr->icmp_sum;
+                icmphdr->icmp_sum = 0;
+                
+                if (cksum(icmphdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t)) != icmpsum) {
+                    fprintf(stderr , "Failed ICMP checksum, incorrect match %d %d\n", cksum(icmphdr, sizeof(sr_icmp_hdr_t)), icmpsum);
+                    return;
+                } else {
+                    icmphdr->icmp_sum = icmpsum;
+                }
+
+                switch (icmphdr->icmp_type) {
+                case 8:
+                    break;
+                default:
+                    break;
+                }
+            }
         }
     }
     else if (ethtype == ethertype_arp) { /* ARP */
@@ -128,18 +144,21 @@ void sr_handlepacket(struct sr_instance* sr,
             fprintf(stderr, "Failed to parse ARP header, insufficient length\n");
         } else {
             /* Handle ARP packet here */
-            print_hdrs(packet, len);
+            /* print_hdrs(packet, len); */
 
-            uint16_t opcode = arpop(packet + sizeof(sr_ethernet_hdr_t));
             sr_arp_hdr_t* arphdr = (sr_arp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
-            if (opcode == arp_op_request) {
+            switch (ntohs(arphdr->ar_op)) {
+            case arp_op_request:
                 fprintf(stderr, "Who is ");
                 print_addr_ip_int(ntohl(arphdr->ar_tip));
 
-                printf("Packet interface: %s\n", interface);
+                /* printf("Packet interface: %s\n", interface); */
                 struct sr_if* iface = sr_get_interface(sr, interface);
-                sr_print_if(iface);
+                /* sr_print_if(iface); */
+
+                /* ARP request for router */
                 if(ntohl(iface->ip) == ntohl(arphdr->ar_tip)) {
+                    /* Respond to ARP request */
                     fprintf(stderr, "Reply: I am!\n");
 
                     memcpy(etherhdr->ether_dhost, etherhdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
@@ -151,15 +170,22 @@ void sr_handlepacket(struct sr_instance* sr,
                     memcpy(arphdr->ar_tha, arphdr->ar_sha, sizeof(char) * ETHER_ADDR_LEN);
                     memcpy(arphdr->ar_sha, iface->addr, sizeof(char) * ETHER_ADDR_LEN);
 
-                    print_hdrs(packet, len);
+                    /* print_hdrs(packet, len); */
 
                     sr_send_packet(sr, packet, len, interface);
                 }
-            } else if (opcode == arp_op_reply) {
+                /* ARP request for some other address */
+                else {
+                    /* Pass along ARP request */
+                }
+                break;
+            case arp_op_reply:
                 fprintf(stderr, "I am ");
                 print_addr_eth(arphdr->ar_tha);
-            } else {
-                fprintf(stderr, "Unrecognized Arp Opcode: %d\n", opcode);
+                break;
+            default:
+                fprintf(stderr, "Unrecognized Arp Opcode: %d\n", ntohs(arphdr->ar_op));
+                break;
             }
         }
     }
