@@ -30,19 +30,15 @@ void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t t
   memcpy(buf, pktEth, sizeof(sr_ethernet_hdr_t));
 
   /* Create the ip header */
-  sr_arp_hdr_t * pktArpHdr = (sr_arp_hdr_t *)(oldBuf + sizeof(sr_ethernet_hdr_t));
-  sr_ip_hdr_t * pktIpHdr = (sr_ip_hdr_t *)malloc(sizeof(sr_ip_hdr_t));
-  *pktIpHdr = (sr_ip_hdr_t){.ip_v = 4, .ip_hl = 4, .ip_tos = 0, 
-			    .ip_len = sizeof(sr_ip_hdr_t), .ip_id = 0, .ip_off = IP_DF, 
-			    .ip_ttl = 64, .ip_p = ip_protocol_icmp, .ip_sum = 0, 
-			    .ip_dst = pktArpHdr->ar_sip, .ip_src = pktArpHdr->ar_tip};
+  sr_ip_hdr_t * pktIpHdr = (sr_ip_hdr_t *)(oldBuf + sizeof(sr_ethernet_hdr_t));
+  *pktIpHdr = (sr_ip_hdr_t){.ip_p = ip_protocol_icmp, 
+			    .ip_dst = pktIpHdr->ip_src, .ip_src = pktIpHdr->ip_dst};
   pktIpHdr->ip_sum = cksum(pktIpHdr, sizeof(sr_ip_hdr_t));
 
   memcpy(buf + sizeof(sr_ethernet_hdr_t), pktIpHdr, sizeof(sr_ip_hdr_t));
-  free(pktIpHdr);
 
   /* Create the icmp headr */
-  sr_icmp_hdr_t * icmpHdr = (sr_icmp_hdr_t *)malloc(sizeof(sr_icmp_hdr_t));
+  sr_icmp_hdr_t * icmpHdr = (sr_icmp_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
   *icmpHdr = (sr_icmp_hdr_t){.icmp_type = type, .icmp_code = code, .icmp_sum = 0};
   icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
   
@@ -75,10 +71,10 @@ void send_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
   fprintf(stderr, "Who is ");
   print_addr_ip_int(ntohl(arpHdr->ar_tip));
 
-  print_hdrs(buf, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
+  /*print_hdrs(buf, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
 
   printf("Sending packet over interface: %s\n", pkt->iface);
-  sr_print_if(iface);
+  sr_print_if(iface);*/
 
   sr_send_packet(sr, buf, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t), iface->name);
 
