@@ -165,7 +165,7 @@ void sr_handlepacket(struct sr_instance* sr,
     	/* Sending packet to next hop ip */
         struct sr_arpentry* arpentry = sr_arpcache_lookup(&sr->cache, iphdr->ip_dst); 
         if (arpentry == NULL) {
-            struct sr_arpreq* req = sr_arpcache_queuereq(&sr->cache, iphdr->ip_dst, packet, len, iface->name);
+            struct sr_arpreq* req = sr_arpcache_queuereq(&sr->cache, iphdr->ip_dst, packet, len, iface->name, interface);
 	        handle_arpreq(sr, req);
         } else {
 	        /*use next_hop_ip->mac mapping in entry to send the packet */
@@ -230,9 +230,9 @@ void sr_handlepacket(struct sr_instance* sr,
                      /* send all packets on the req->packets linked list */
                      struct sr_packet* pkt = req->packets;
                      struct sr_packet* nextPkt;
-		     while(pkt) {
-		       nextPkt = pkt->next;
-		       sr_ethernet_hdr_t* newetherhdr = (sr_ethernet_hdr_t*)(pkt->buf);
+        		     while(pkt) {
+		                  nextPkt = pkt->next;
+		                 sr_ethernet_hdr_t* newetherhdr = (sr_ethernet_hdr_t*)(pkt->buf);
                          memcpy(newetherhdr->ether_dhost, arphdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
                          memcpy(newetherhdr->ether_shost, arphdr->ar_tha, sizeof(uint8_t) * ETHER_ADDR_LEN);
 
