@@ -16,34 +16,28 @@
 void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t type, uint8_t code) {
   /* Create new buffer */
   unsigned int packetSize = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t);
-  uint8_t * buf = (uint8_t *)malloc(packetSize);
-  uint8_t * oldBuf = pkt->buf;
+  uint8_t* buf = (uint8_t *)malloc(packetSize);
+  uint8_t* oldBuf = pkt->buf;
 
   /* Create the ethernet header */
-  sr_ethernet_hdr_t * pktEth = (sr_ethernet_hdr_t *)(oldBuf);
-  uint8_t dhost[ETHER_ADDR_LEN];
-  memcpy(dhost, pktEth->ether_dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
-  memcpy(pktEth->ether_dhost, pktEth->ether_shost, sizeof(uint8_t)*ETHER_ADDR_LEN);
-  memcpy(pktEth->ether_shost, dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
-  pktEth->ether_type = htons(ethertype_ip);
-
-  memcpy(buf, pktEth, sizeof(sr_ethernet_hdr_t));
+  sr_ethernet_hdr_t* etherHdr = (sr_ethernet_hdr_t *)(buf);
+  sr_ethernet_hdr_t* oldEtherHdr = (sr_ethernet_hdr_t *)(oldBuf);
+  memcpy(etherHdr->ether_dhost, oldEtherHdr->ether_shost, sizeof(uint8_t)*ETHER_ADDR_LEN);
+  memcpy(etherHdr->ether_shost, oldEtherHdr->ether_dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
+  etherHdr->ether_type = htons(ethertype_ip);
 
   /* Create the ip header */
-  sr_ip_hdr_t * pktIpHdr = (sr_ip_hdr_t *)(oldBuf + sizeof(sr_ethernet_hdr_t));
-  *pktIpHdr = (sr_ip_hdr_t){.ip_p = ip_protocol_icmp, 
-			    .ip_dst = pktIpHdr->ip_src, .ip_src = pktIpHdr->ip_dst};
-  pktIpHdr->ip_sum = cksum(pktIpHdr, sizeof(sr_ip_hdr_t));
-
-  memcpy(buf + sizeof(sr_ethernet_hdr_t), pktIpHdr, sizeof(sr_ip_hdr_t));
+  sr_ip_hdr_t* ipHdr = (sr_ip_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t));
+  sr_ip_hdr_t* oldIpHdr = (sr_ip_hdr_t *)(oldBuf + sizeof(sr_ethernet_hdr_t));
+  *ipHdr = (sr_ip_hdr_t){.ip_p = ip_protocol_icmp, 
+			    .ip_dst = oldIpHdr->ip_src, .ip_src = oldIpHdr->ip_dst};
+  ipHdr->ip_sum = cksum(ipHdr, sizeof(sr_ip_hdr_t));
 
   /* Create the icmp headr */
   sr_icmp_hdr_t * icmpHdr = (sr_icmp_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
-  *icmpHdr = (sr_icmp_hdr_t){.icmp_type = type, .icmp_code = code, .icmp_sum = 0};
+  *icmpHdr = (sr_icmp_hdr_t){.icmp_type = type, .icmp_code = code};
   icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
   
-  memcpy(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t), icmpHdr, sizeof(sr_icmp_hdr_t));
-
   print_hdrs(buf, packetSize);
   sr_send_packet(sr, buf, packetSize, pkt->iface);
 }
