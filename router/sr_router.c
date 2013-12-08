@@ -186,7 +186,7 @@ void sr_handlepacket(struct sr_instance* sr,
             fprintf(stderr, "Failed to parse ARP header, insufficient length\n");
         } else {
             /* Handle ARP packet here */
-            /* print_hdrs(packet, len); */
+            print_hdrs(packet, len); 
 
             sr_arp_hdr_t* arphdr = (sr_arp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
             switch (ntohs(arphdr->ar_op)) {

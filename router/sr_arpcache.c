@@ -52,17 +52,53 @@ void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t t
   sr_send_packet(sr, buf, packetSize, pkt->iface);
 }
 
+void send_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
+  struct sr_packet * pkt = req->packets;
+  struct sr_if* iface = sr_get_interface(sr, pkt->iface);
+
+  /* copy the old ethernet header into the new buffer */
+  uint8_t * buf = (uint8_t *)malloc(sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
+
+  sr_ethernet_hdr_t * etherHdr = (sr_ethernet_hdr_t *)buf;
+  memcpy(etherHdr->ether_shost, iface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+  int i = 0; for(; i < ETHER_ADDR_LEN; i++) { etherHdr->ether_dhost[i] = 0xff; }
+  etherHdr->ether_type = htons(ethertype_arp);
+
+  /* create arp header and copy it into the buffer */
+  sr_arp_hdr_t * arpHdr = (sr_arp_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t));
+  *arpHdr = (sr_arp_hdr_t){.ar_hrd = htons(arp_hrd_ethernet), .ar_pro = htons(ethertype_ip),
+			   .ar_hln = 6,
+			   .ar_pln = 4, .ar_op = htons(arp_op_request),
+			   .ar_sip = iface->ip, .ar_tip = req->ip};
+  memcpy(arpHdr->ar_sha, etherHdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
+
+  fprintf(stderr, "Who is ");
+  print_addr_ip_int(ntohl(arpHdr->ar_tip));
+
+  print_hdrs(buf, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
+
+  printf("Sending packet over interface: %s\n", pkt->iface);
+  sr_print_if(iface);
+
+  sr_send_packet(sr, buf, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t), iface->name);
+
+  /*free(buf); */
+
+  req->sent = time(NULL);
+  req->times_sent++;
+}
+
 /* If code causes any problems, comment out the function call in sr_arpcache_sweepreqs */
 void handle_arpreq(struct sr_instance *sr, struct sr_arpreq *req) {
   assert(sr);
   assert(req);
   
-  struct sr_packet * pkt = req->packets;
-  struct sr_packet * nextPkt;
   /* handle arp request */
   if(difftime(time(NULL), req->sent) > 1.0) {
     if(req->times_sent >= 5) {
-      
+      struct sr_packet * pkt = req->packets;
+      struct sr_packet * nextPkt;
+
       while(pkt != NULL) {
 	nextPkt = pkt->next;
 	send_icmp_message(sr, pkt, 3, 1);
@@ -71,17 +107,11 @@ void handle_arpreq(struct sr_instance *sr, struct sr_arpreq *req) {
 
       sr_arpreq_destroy(&(sr->cache), req);
     }
-  }
-  else {
-    /* send arp request */
-    /*TODO might be wrong*/
-    while(pkt != NULL) {
-      nextPkt = pkt->next;
-      sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
-      pkt = nextPkt;
+  
+    else {
+      /* send arp request */
+      send_arp_request(sr, req);
     }
-    req->sent = time(NULL);
-    req->times_sent++;
   }
 }
 
