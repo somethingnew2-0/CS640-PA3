@@ -25,7 +25,7 @@ void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t t
   memcpy(dhost, pktEth->ether_dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
   memcpy(pktEth->ether_dhost, pktEth->ether_shost, sizeof(uint8_t)*ETHER_ADDR_LEN);
   memcpy(pktEth->ether_shost, dhost, sizeof(uint8_t)*ETHER_ADDR_LEN);
-  pktEth->ether_type = ethertype_ip;
+  pktEth->ether_type = htons(ethertype_ip);
 
   memcpy(buf, pktEth, sizeof(sr_ethernet_hdr_t));
 
@@ -43,8 +43,8 @@ void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t t
   icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
   
   memcpy(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t), icmpHdr, sizeof(sr_icmp_hdr_t));
-  free(icmpHdr);
 
+  print_hdrs(buf, packetSize);
   sr_send_packet(sr, buf, packetSize, pkt->iface);
 }
 
