@@ -223,7 +223,26 @@ void sr_handlepacket(struct sr_instance* sr,
                 break;
             case arp_op_reply:
                 fprintf(stderr, "I am ");
-                print_addr_eth(arphdr->ar_tha);
+                print_addr_eth(arphdr->ar_sha);
+                
+                struct sr_arpreq* req = sr_arpcache_insert(&sr->cache, arphdr->ar_sha, arphdr->ar_sip);
+                if (req) {
+                     /* send all packets on the req->packets linked list */
+                     struct sr_packet* pkt = req->packets;
+                     struct sr_packet* nextPkt;
+		     while(pkt) {
+		       nextPkt = pkt->next;
+		       sr_ethernet_hdr_t* newetherhdr = (sr_ethernet_hdr_t*)(pkt->buf);
+                         memcpy(newetherhdr->ether_dhost, arphdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+                         memcpy(newetherhdr->ether_shost, arphdr->ar_tha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+
+                         print_hdrs(pkt->buf, pkt->len);
+
+                         sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
+                         pkt = nextPkt;
+                     }
+                     sr_arpreq_destroy(&sr->cache, req);
+                }
                 break;
             default:
                 fprintf(stderr, "Unrecognized Arp Opcode: %d\n", ntohs(arphdr->ar_op));
