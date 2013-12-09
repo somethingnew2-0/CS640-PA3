@@ -87,6 +87,7 @@ void sr_handlepacket(struct sr_instance* sr,
     }
 
 
+    struct sr_if* iniface = sr_get_interface(sr, interface);
     sr_ethernet_hdr_t* etherhdr = (sr_ethernet_hdr_t*)packet;
     uint16_t ethtype = ethertype(packet);
 
@@ -110,71 +111,88 @@ void sr_handlepacket(struct sr_instance* sr,
         } else {
             iphdr->ip_sum = ipsum;
         }
-
-        uint8_t ip_proto = ip_protocol(packet + sizeof(sr_ethernet_hdr_t));
-        if (ip_proto == ip_protocol_icmp) { /* ICMP */
-            minlength += sizeof(sr_icmp_hdr_t);
-            if (len < minlength) {
-                fprintf(stderr, "Failed to parse ICMP header, insufficient length\n");
-                return;
-            }
-            else {
-                /* Handle ICMP packet here */
-                sr_icmp_hdr_t* icmphdr = (sr_icmp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
-                uint16_t icmpsum = icmphdr->icmp_sum;
-                icmphdr->icmp_sum = 0;
-                
-                if (cksum(icmphdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t)) != icmpsum) {
-                    fprintf(stderr , "Failed ICMP checksum, incorrect match %d %d\n", cksum(icmphdr, sizeof(sr_icmp_hdr_t)), icmpsum);
+        if (ntohl(iphdr->ip_dst) == ntohl(iniface->ip)) {
+            uint8_t ip_proto = ip_protocol(packet + sizeof(sr_ethernet_hdr_t));
+            if (ip_proto == ip_protocol_icmp) { /* ICMP */
+                minlength += sizeof(sr_icmp_hdr_t);
+                if (len < minlength) {
+                    fprintf(stderr, "Failed to parse ICMP header, insufficient length\n");
                     return;
-                } else {
-                    icmphdr->icmp_sum = icmpsum;
                 }
+                else {
+                    /* Handle ICMP packet here */
+                    sr_icmp_hdr_t* icmphdr = (sr_icmp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+                    uint16_t icmpsum = icmphdr->icmp_sum;
+                    icmphdr->icmp_sum = 0;
+                    
+                    if (cksum(icmphdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t)) != icmpsum) {
+                        fprintf(stderr , "Failed ICMP checksum, incorrect match %d %d\n", cksum(icmphdr, sizeof(sr_icmp_hdr_t)), icmpsum);
+                        return;
+                    }
 
-                switch (icmphdr->icmp_type) {
-                default:
-                    fprintf(stderr, "Ignoring this ICMP message %d\n", icmphdr->icmp_type);
+                    if(icmphdr->icmp_type == 8) {
+		      memcpy(etherhdr->ether_dhost, etherhdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
+		      memcpy(etherhdr->ether_shost, iniface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+		      uint32_t src = iphdr->ip_src;
+		      iphdr->ip_src = iphdr->ip_dst;
+		      iphdr->ip_dst = src;
+		      iphdr->ip_sum = 0;
+		      iphdr->ip_sum = cksum(iphdr, sizeof(sr_ip_hdr_t));
+
+		      icmphdr->icmp_type = 0;
+		      icmphdr->icmp_code = 0;
+		      icmphdr->icmp_sum = 0;
+		      icmphdr->icmp_sum = cksum(icmphdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
+		      
+		      print_hdrs(packet, len);
+		      sr_send_packet(sr, packet, len, iniface->name);
+		    }
+		    else {
+                        fprintf(stderr, "Ignoring this ICMP message %d\n", icmphdr->icmp_type);
+                    }
+                }
+            }
+        } else {
+            /* Decrement TTL on ip header */
+            iphdr->ip_ttl--;
+            /* Recompute checksum */
+            iphdr->ip_sum = 0;
+            iphdr->ip_sum = cksum(iphdr, sizeof(sr_ip_hdr_t));
+
+            /* Find interface with longest prefix match for ip destination to forward to */
+            struct sr_rt* rt_match = NULL;
+            struct sr_rt* rt_walker = sr->routing_table;
+
+            while(rt_walker) {
+                uint32_t prefix = (iphdr->ip_dst & (*(uint32_t*)&rt_walker->mask)) - (*(uint32_t*)&rt_walker->dest);
+                if(prefix  == 0) { 
+                    rt_match = rt_walker;
                     break;
                 }
+                rt_walker = rt_walker->next;
             }
-        }
 
-        /* Decrement TTL on ip header */
-        iphdr->ip_ttl--;
-        /* Recompute checksum */
-        iphdr->ip_sum = 0;
-        iphdr->ip_sum = cksum(iphdr, sizeof(sr_ip_hdr_t));
-
-
-        /* Find interface with longest prefix match for ip destination to forward to */
-        struct sr_rt* rt_match = NULL;
-        uint32_t longest_prefix = UINT_MAX;
-        struct sr_rt* rt_walker = sr->routing_table;
-
-        while(rt_walker) {
-            uint32_t prefix = (iphdr->ip_dst & (*(uint32_t*)&rt_walker->mask)) - (*(uint32_t*)&rt_walker->gw);
-            if(prefix < longest_prefix) { 
-                longest_prefix = prefix;
-                rt_match = rt_walker;
+            if(rt_match == NULL) {
+                /* send icmp type 3 code 0 reponse */
+                return;
             }
-            rt_walker = rt_walker->next;
-        }
 
-        struct sr_if* iface = sr_get_interface(sr, rt_match->interface);
+            struct sr_if* outiface = sr_get_interface(sr, rt_match->interface);
 
-    	/* Sending packet to next hop ip */
-        struct sr_arpentry* arpentry = sr_arpcache_lookup(&sr->cache, iphdr->ip_dst); 
-        if (arpentry == NULL) {
-            struct sr_arpreq* req = sr_arpcache_queuereq(&sr->cache, iphdr->ip_dst, packet, len, iface->name, interface);
-	        handle_arpreq(sr, req);
-        } else {
-	        /*use next_hop_ip->mac mapping in entry to send the packet */
-            memcpy(etherhdr->ether_dhost, arpentry->mac, sizeof(uint8_t) * ETHER_ADDR_LEN);
-            memcpy(etherhdr->ether_shost, iface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
-            
-            sr_send_packet(sr, packet, len, iface->name);
+            /* Sending packet to next hop ip */
+            struct sr_arpentry* arpentry = sr_arpcache_lookup(&sr->cache, iphdr->ip_dst); 
+            if (arpentry) {
+                /*use next_hop_ip->mac mapping in entry to send the packet */
+                memcpy(etherhdr->ether_dhost, arpentry->mac, sizeof(uint8_t) * ETHER_ADDR_LEN);
+                memcpy(etherhdr->ether_shost, outiface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+                
+                sr_send_packet(sr, packet, len, outiface->name);
 
-            free(arpentry);
+                free(arpentry);
+            } else {
+                struct sr_arpreq* req = sr_arpcache_queuereq(&sr->cache, iphdr->ip_dst, packet, len, outiface->name, iniface->name);
+                handle_arpreq(sr, req);
+            }
         }
 
         print_hdrs(packet, len);
@@ -195,24 +213,23 @@ void sr_handlepacket(struct sr_instance* sr,
                 print_addr_ip_int(ntohl(arphdr->ar_tip));
 
                 /* printf("Packet interface: %s\n", interface); */
-                struct sr_if* iface = sr_get_interface(sr, interface);
                 /* sr_print_if(iface); */
 
                 /* ARP request for router */
-                if(ntohl(iface->ip) == ntohl(arphdr->ar_tip)) {
+                if(ntohl(iniface->ip) == ntohl(arphdr->ar_tip)) {
                     /* Respond to ARP request */
                     fprintf(stderr, "Reply: I am!\n");
 
                     memcpy(etherhdr->ether_dhost, etherhdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
-                    memcpy(etherhdr->ether_shost, iface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+                    memcpy(etherhdr->ether_shost, iniface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
 
                     arphdr->ar_op = htons(arp_op_reply); 
                     arphdr->ar_tip = arphdr->ar_sip;
-                    arphdr->ar_sip = iface->ip;
+                    arphdr->ar_sip = iniface->ip;
                     memcpy(arphdr->ar_tha, arphdr->ar_sha, sizeof(char) * ETHER_ADDR_LEN);
-                    memcpy(arphdr->ar_sha, iface->addr, sizeof(char) * ETHER_ADDR_LEN);
+                    memcpy(arphdr->ar_sha, iniface->addr, sizeof(char) * ETHER_ADDR_LEN);
 
-                    /* print_hdrs(packet, len); */
+                    print_hdrs(packet, len); 
 
                     sr_send_packet(sr, packet, len, interface);
                 }
