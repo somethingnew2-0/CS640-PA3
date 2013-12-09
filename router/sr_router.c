@@ -69,9 +69,9 @@ void sr_init(struct sr_instance* sr)
  *---------------------------------------------------------------------*/
 
 void sr_handlepacket(struct sr_instance* sr,
-        uint8_t * packet/* lent */,
-        unsigned int len,
-        char* interface/* lent */)
+		     uint8_t * packet/* lent */,
+		     unsigned int len,
+		     char* interface/* lent */)
 {
     /* REQUIRES */
     assert(sr);
@@ -131,21 +131,21 @@ void sr_handlepacket(struct sr_instance* sr,
                     }
 
                     if(icmphdr->icmp_type == 8) {
-		      memcpy(etherhdr->ether_dhost, etherhdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
-		      memcpy(etherhdr->ether_shost, iniface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
-		      uint32_t src = iphdr->ip_src;
-		      iphdr->ip_src = iphdr->ip_dst;
-		      iphdr->ip_dst = src;
-		      iphdr->ip_sum = 0;
-		      iphdr->ip_sum = cksum(iphdr, sizeof(sr_ip_hdr_t));
+			memcpy(etherhdr->ether_dhost, etherhdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
+			memcpy(etherhdr->ether_shost, iniface->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+			uint32_t src = iphdr->ip_src;
+			iphdr->ip_src = iphdr->ip_dst;
+			iphdr->ip_dst = src;
+			iphdr->ip_sum = 0;
+			iphdr->ip_sum = cksum(iphdr, sizeof(sr_ip_hdr_t));
 
-		      icmphdr->icmp_type = 0;
-		      icmphdr->icmp_code = 0;
-		      icmphdr->icmp_sum = 0;
-		      icmphdr->icmp_sum = cksum(icmphdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
+			icmphdr->icmp_type = 0;
+			icmphdr->icmp_code = 0;
+			icmphdr->icmp_sum = 0;
+			icmphdr->icmp_sum = cksum(icmphdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
 		      
-		      print_hdrs(packet, len);
-		      sr_send_packet(sr, packet, len, iniface->name);
+			print_hdrs(packet, len);
+			sr_send_packet(sr, packet, len, iniface->name);
 		    }
 		    else {
                         fprintf(stderr, "Ignoring this ICMP message %d\n", icmphdr->icmp_type);
@@ -153,11 +153,11 @@ void sr_handlepacket(struct sr_instance* sr,
                 }
             }
 	    else {
-	      /* send icmp type 3 code 3 reponse */
-              struct sr_packet *icmpPkt = (struct sr_packet*)malloc(sizeof(struct sr_packet));
-              *icmpPkt = (struct sr_packet){.buf = packet, .len = len, .iface = iniface->name, .iniface = iniface->name, .next = NULL};
-              send_icmp_message(sr, icmpPkt, 3, 3);
-              return;
+		/* send icmp type 3 code 3 reponse */
+		struct sr_packet *icmpPkt = (struct sr_packet*)malloc(sizeof(struct sr_packet));
+		*icmpPkt = (struct sr_packet){.buf = packet, .len = len, .iface = iniface->name, .iniface = iniface->name, .next = NULL};
+		send_icmp_message(sr, icmpPkt, 3, 3);
+		return;
 
 	    }
         } else {
@@ -169,11 +169,11 @@ void sr_handlepacket(struct sr_instance* sr,
             iphdr->ip_sum = cksum(iphdr, sizeof(sr_ip_hdr_t));
             
             if (iphdr->ip_ttl <= 0) {
-              /* send icmp type 11 code 0 reponse */
-              struct sr_packet *icmpPkt = (struct sr_packet*)malloc(sizeof(struct sr_packet));
-              *icmpPkt = (struct sr_packet){.buf = packet, .len = len, .iface = iniface->name, .iniface = iniface->name, .next = NULL};
-              send_icmp_message(sr, icmpPkt, 11, 0);
-	      return;
+		/* send icmp type 11 code 0 reponse */
+		struct sr_packet *icmpPkt = (struct sr_packet*)malloc(sizeof(struct sr_packet));
+		*icmpPkt = (struct sr_packet){.buf = packet, .len = len, .iface = iniface->name, .iniface = iniface->name, .next = NULL};
+		send_icmp_message(sr, icmpPkt, 11, 0);
+		return;
 	    }
             /* Find interface with longest prefix match for ip destination to forward to */
             struct sr_rt* rt_match = NULL;
@@ -189,11 +189,11 @@ void sr_handlepacket(struct sr_instance* sr,
             }
 
             if(rt_match == NULL) {
-              /* send icmp type 3 code 0 reponse */
-              struct sr_packet *icmpPkt = (struct sr_packet*)malloc(sizeof(struct sr_packet));
-              *icmpPkt = (struct sr_packet){.buf = packet, .len = len, .iface = iniface->name, .iniface = iniface->name, .next = NULL};
-              send_icmp_message(sr, icmpPkt, 3, 0);
-              return;
+		/* send icmp type 3 code 0 reponse */
+		struct sr_packet *icmpPkt = (struct sr_packet*)malloc(sizeof(struct sr_packet));
+		*icmpPkt = (struct sr_packet){.buf = packet, .len = len, .iface = iniface->name, .iniface = iniface->name, .next = NULL};
+		send_icmp_message(sr, icmpPkt, 3, 0);
+		return;
             }
 
             struct sr_if* outiface = sr_get_interface(sr, rt_match->interface);
@@ -263,21 +263,21 @@ void sr_handlepacket(struct sr_instance* sr,
                 
                 struct sr_arpreq* req = sr_arpcache_insert(&sr->cache, arphdr->ar_sha, arphdr->ar_sip);
                 if (req) {
-                     /* send all packets on the req->packets linked list */
-                     struct sr_packet* pkt = req->packets;
-                     struct sr_packet* nextPkt;
-		     while(pkt) {
-		       nextPkt = pkt->next;
-		       sr_ethernet_hdr_t* newetherhdr = (sr_ethernet_hdr_t*)(pkt->buf);
-		       memcpy(newetherhdr->ether_dhost, arphdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
-		       memcpy(newetherhdr->ether_shost, arphdr->ar_tha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+		    /* send all packets on the req->packets linked list */
+		    struct sr_packet* pkt = req->packets;
+		    struct sr_packet* nextPkt;
+		    while(pkt) {
+			nextPkt = pkt->next;
+			sr_ethernet_hdr_t* newetherhdr = (sr_ethernet_hdr_t*)(pkt->buf);
+			memcpy(newetherhdr->ether_dhost, arphdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+			memcpy(newetherhdr->ether_shost, arphdr->ar_tha, sizeof(uint8_t) * ETHER_ADDR_LEN);
 		       
-		       print_hdrs(pkt->buf, pkt->len);
+			print_hdrs(pkt->buf, pkt->len);
 
-		       sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
-		       pkt = nextPkt;
-                     }
-                     sr_arpreq_destroy(&sr->cache, req);
+			sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
+			pkt = nextPkt;
+		    }
+		    sr_arpreq_destroy(&sr->cache, req);
                 }
                 break;
             default:
