@@ -207,7 +207,7 @@ void sr_handlepacket(struct sr_instance* sr,
                 
                 sr_send_packet(sr, packet, len, outiface->name);
 
-                /* free(arpentry); */
+                free(arpentry); 
             } else {
                 struct sr_arpreq* req = sr_arpcache_queuereq(&sr->cache, iphdr->ip_dst, packet, len, outiface->name, iniface->name);
                 handle_arpreq(sr, req);
@@ -252,10 +252,6 @@ void sr_handlepacket(struct sr_instance* sr,
 
                     sr_send_packet(sr, packet, len, interface);
                 }
-                /* ARP request for some other address */
-                else {
-                    /* Pass along ARP request */
-                }
                 break;
             case arp_op_reply:
                 fprintf(stderr, "I am ");
@@ -263,21 +259,21 @@ void sr_handlepacket(struct sr_instance* sr,
                 
                 struct sr_arpreq* req = sr_arpcache_insert(&sr->cache, arphdr->ar_sha, arphdr->ar_sip);
                 if (req) {
-		    /* send all packets on the req->packets linked list */
-		    struct sr_packet* pkt = req->packets;
-		    struct sr_packet* nextPkt;
-		    while(pkt) {
-			nextPkt = pkt->next;
-			sr_ethernet_hdr_t* newetherhdr = (sr_ethernet_hdr_t*)(pkt->buf);
-			memcpy(newetherhdr->ether_dhost, arphdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
-			memcpy(newetherhdr->ether_shost, arphdr->ar_tha, sizeof(uint8_t) * ETHER_ADDR_LEN);
-		       
-			print_hdrs(pkt->buf, pkt->len);
+                    /* send all packets on the req->packets linked list */
+                    struct sr_packet* pkt = req->packets;
+                    struct sr_packet* nextPkt;
+                    while(pkt) {
+                        nextPkt = pkt->next;
+                        sr_ethernet_hdr_t* newetherhdr = (sr_ethernet_hdr_t*)(pkt->buf);
+                        memcpy(newetherhdr->ether_dhost, arphdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+                        memcpy(newetherhdr->ether_shost, arphdr->ar_tha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+                           
+                        print_hdrs(pkt->buf, pkt->len);
 
-			sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
-			pkt = nextPkt;
-		    }
-		    sr_arpreq_destroy(&sr->cache, req);
+                        sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
+                        pkt = nextPkt;
+                    }
+                    sr_arpreq_destroy(&sr->cache, req);
                 }
                 break;
             default:
