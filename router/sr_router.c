@@ -152,13 +152,29 @@ void sr_handlepacket(struct sr_instance* sr,
                     }
                 }
             }
+	    else {
+	      /* send icmp type 3 code 3 reponse */
+              struct sr_packet *icmpPkt = (struct sr_packet*)malloc(sizeof(struct sr_packet));
+              *icmpPkt = (struct sr_packet){.buf = packet, .len = len, .iface = iniface->name, .iniface = iniface->name, .next = NULL};
+              send_icmp_message(sr, icmpPkt, 3, 3);
+              return;
+
+	    }
         } else {
             /* Decrement TTL on ip header */
             iphdr->ip_ttl--;
+            
             /* Recompute checksum */
             iphdr->ip_sum = 0;
             iphdr->ip_sum = cksum(iphdr, sizeof(sr_ip_hdr_t));
-
+            
+            if (iphdr->ip_ttl <= 0) {
+              /* send icmp type 11 code 0 reponse */
+              struct sr_packet *icmpPkt = (struct sr_packet*)malloc(sizeof(struct sr_packet));
+              *icmpPkt = (struct sr_packet){.buf = packet, .len = len, .iface = iniface->name, .iniface = iniface->name, .next = NULL};
+              send_icmp_message(sr, icmpPkt, 11, 0);
+	      return;
+	    }
             /* Find interface with longest prefix match for ip destination to forward to */
             struct sr_rt* rt_match = NULL;
             struct sr_rt* rt_walker = sr->routing_table;
@@ -173,8 +189,11 @@ void sr_handlepacket(struct sr_instance* sr,
             }
 
             if(rt_match == NULL) {
-                /* send icmp type 3 code 0 reponse */
-                return;
+              /* send icmp type 3 code 0 reponse */
+              struct sr_packet *icmpPkt = (struct sr_packet*)malloc(sizeof(struct sr_packet));
+              *icmpPkt = (struct sr_packet){.buf = packet, .len = len, .iface = iniface->name, .iniface = iniface->name, .next = NULL};
+              send_icmp_message(sr, icmpPkt, 3, 0);
+              return;
             }
 
             struct sr_if* outiface = sr_get_interface(sr, rt_match->interface);
@@ -188,7 +207,7 @@ void sr_handlepacket(struct sr_instance* sr,
                 
                 sr_send_packet(sr, packet, len, outiface->name);
 
-                free(arpentry);
+                /* free(arpentry); */
             } else {
                 struct sr_arpreq* req = sr_arpcache_queuereq(&sr->cache, iphdr->ip_dst, packet, len, outiface->name, iniface->name);
                 handle_arpreq(sr, req);
@@ -247,16 +266,16 @@ void sr_handlepacket(struct sr_instance* sr,
                      /* send all packets on the req->packets linked list */
                      struct sr_packet* pkt = req->packets;
                      struct sr_packet* nextPkt;
-        		     while(pkt) {
-		                  nextPkt = pkt->next;
-		                 sr_ethernet_hdr_t* newetherhdr = (sr_ethernet_hdr_t*)(pkt->buf);
-                         memcpy(newetherhdr->ether_dhost, arphdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
-                         memcpy(newetherhdr->ether_shost, arphdr->ar_tha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+		     while(pkt) {
+		       nextPkt = pkt->next;
+		       sr_ethernet_hdr_t* newetherhdr = (sr_ethernet_hdr_t*)(pkt->buf);
+		       memcpy(newetherhdr->ether_dhost, arphdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+		       memcpy(newetherhdr->ether_shost, arphdr->ar_tha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+		       
+		       print_hdrs(pkt->buf, pkt->len);
 
-                         print_hdrs(pkt->buf, pkt->len);
-
-                         sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
-                         pkt = nextPkt;
+		       sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
+		       pkt = nextPkt;
                      }
                      sr_arpreq_destroy(&sr->cache, req);
                 }

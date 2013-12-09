@@ -15,7 +15,13 @@
 
 void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t type, uint8_t code) {
   /* Create new buffer */
-  unsigned int packetSize = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t);
+  unsigned int packetSize;
+  if(type == 3 || type == 11) {
+    packetSize = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t);
+  }
+  else {
+    packetSize = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t);
+  }
   uint8_t* buf = (uint8_t *)malloc(packetSize);
   uint8_t* oldBuf = pkt->buf;
   struct sr_if* interface = sr_get_interface(sr, pkt->iniface);
@@ -34,14 +40,30 @@ void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t t
   ipHdr->ip_sum = cksum(ipHdr, sizeof(sr_ip_hdr_t));
 
   /* Create the icmp headr */
-  sr_icmp_hdr_t * icmpHdr = (sr_icmp_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
-  *icmpHdr = (sr_icmp_hdr_t){.icmp_type = type, .icmp_code = code};
-  icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
-  
+  if(type == 3 || type == 11) {
+    sr_icmp_t3_hdr_t * icmpHdr = (sr_icmp_t3_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+    *icmpHdr = (sr_icmp_t3_hdr_t){.icmp_type = type, .icmp_code = code};
+    memcpy(icmpHdr->data, oldIpHdr, sizeof(uint8_t) * ICMP_DATA_SIZE);
+    icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_t3_hdr_t));
+  }
+  else {
+    sr_icmp_hdr_t * icmpHdr = (sr_icmp_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+    *icmpHdr = (sr_icmp_hdr_t){.icmp_type = type, .icmp_code = code, .icmp_sum = 0};
+    icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
+  }
   printf("Packet interface: %s\n", interface->name);
   print_hdrs(buf, packetSize);
 
-  sr_send_packet(sr, buf, packetSize, interface->name);
+  /* Sending packet to next hop ip */
+  struct sr_arpentry* arpentry = sr_arpcache_lookup(&sr->cache, ipHdr->ip_dst); 
+  if (arpentry) {
+    sr_send_packet(sr, buf, packetSize, interface->name);
+
+    free(arpentry);
+  } else {
+    struct sr_arpreq* req = sr_arpcache_queuereq(&sr->cache, ipHdr->ip_dst, buf, packetSize, pkt->iface, pkt->iniface);
+    handle_arpreq(sr, req);
+  }
 }
 
 void send_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
