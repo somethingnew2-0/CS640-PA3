@@ -36,11 +36,18 @@ void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t t
     /* Create the ip header */
     sr_ip_hdr_t* ipHdr = (sr_ip_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t));
     sr_ip_hdr_t* oldIpHdr = (sr_ip_hdr_t *)(oldBuf + sizeof(sr_ethernet_hdr_t));
-    *ipHdr = (sr_ip_hdr_t){.ip_hl = 5, .ip_v = 4,.ip_len = htons(packetSize), .ip_ttl = 100, .ip_p = ip_protocol_icmp, .ip_dst = oldIpHdr->ip_src, .ip_src = interface->ip};
+    *ipHdr = (sr_ip_hdr_t){.ip_hl = 5, .ip_v = 4, 
+			   .ip_len = htons(packetSize), 
+			   .ip_ttl = 64, .ip_p = ip_protocol_icmp, .ip_dst = oldIpHdr->ip_src, 
+			   .ip_src = interface->ip};
     ipHdr->ip_sum = cksum(ipHdr, sizeof(sr_ip_hdr_t));
 
     /* Create the icmp headr */
     if(type == 3 || type == 11) {
+	/* Possibly fix logic here */
+	ipHdr->ip_len = htons(packetSize - sizeof(uint8_t) * ICMP_DATA_SIZE * .5);
+	ipHdr->ip_sum = 0;
+	ipHdr->ip_sum = cksum(ipHdr,  sizeof(sr_ip_hdr_t));
         sr_icmp_t3_hdr_t * icmpHdr = (sr_icmp_t3_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
         *icmpHdr = (sr_icmp_t3_hdr_t){.icmp_type = type, .icmp_code = code};
         memcpy(icmpHdr->data, oldIpHdr, sizeof(uint8_t) * ICMP_DATA_SIZE);
