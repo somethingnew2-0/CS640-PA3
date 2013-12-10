@@ -13,6 +13,26 @@
 #include "sr_protocol.h"
 #include "sr_utils.h"
 
+void print_ip_noNL(uint32_t ip){ 
+    unsigned char bytes[4];
+    bytes[0] = ip & 0xFF;
+    bytes[1] = (ip >> 8) & 0xFF;
+    bytes[2] = (ip >> 16) & 0xFF;
+    bytes[3] = (ip >> 24) & 0xFF;
+    fprintf(stderr, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);
+}
+
+void print_mac_noNL(uint8_t *addr) {
+    int pos = 0;
+    uint8_t cur;
+    for (; pos < ETHER_ADDR_LEN; pos++) {
+	cur = addr[pos];
+	if (pos > 0)
+	    fprintf(stderr, ":");
+	fprintf(stderr, "%02X", cur);
+    }
+}
+
 void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t type, uint8_t code) {
     /* Create new buffer */
     unsigned int packetSize;
@@ -58,8 +78,8 @@ void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t t
         *icmpHdr = (sr_icmp_hdr_t){.icmp_type = type, .icmp_code = code, .icmp_sum = 0};
         icmpHdr->icmp_sum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
     }
-    printf("Packet interface: %s\n", interface->name);
-    print_hdrs(buf, packetSize);
+    /*printf("Packet interface: %s\n", interface->name);
+      print_hdrs(buf, packetSize);*/
 
     /* Sending packet to next hop ip */
     struct sr_arpentry* arpentry = sr_arpcache_lookup(&sr->cache, ipHdr->ip_dst); 
@@ -141,7 +161,7 @@ void handle_arpreq(struct sr_instance *sr, struct sr_arpreq *req) {
 void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
     assert(sr);
 
-    struct sr_arpreq * request = sr->cache.requests;\
+    struct sr_arpreq * request = sr->cache.requests;
     struct sr_arpreq * nextRequest;
     while(request != NULL) {
 	nextRequest = request->next;
@@ -268,6 +288,12 @@ struct sr_arpreq *sr_arpcache_insert(struct sr_arpcache *cache,
         cache->entries[i].ip = ip;
         cache->entries[i].added = time(NULL);
         cache->entries[i].valid = 1;
+
+	fprintf(stderr, "<");
+	print_ip_noNL(ip);
+	fprintf(stderr, ", ");
+	print_mac_noNL(mac);
+	fprintf(stderr,">\n");
     }
     
     pthread_mutex_unlock(&(cache->lock));

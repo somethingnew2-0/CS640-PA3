@@ -99,7 +99,7 @@ void sr_handlepacket(struct sr_instance* sr,
         }
 
         /* Handle IP packet here */
-        print_hdrs(packet, len);
+        /*print_hdrs(packet, len);*/
         
         sr_ip_hdr_t* iphdr = (sr_ip_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
         uint16_t ipsum = iphdr->ip_sum;
@@ -144,7 +144,7 @@ void sr_handlepacket(struct sr_instance* sr,
 			icmphdr->icmp_sum = 0;
 			icmphdr->icmp_sum = cksum(icmphdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
 		      
-			print_hdrs(packet, len);
+			/*print_hdrs(packet, len);*/
 			sr_send_packet(sr, packet, len, iniface->name);
 		    }
 		    else {
@@ -214,7 +214,7 @@ void sr_handlepacket(struct sr_instance* sr,
             }
         }
 
-        print_hdrs(packet, len);
+        /*print_hdrs(packet, len);*/
 
     }
     else if (ethtype == ethertype_arp) { /* ARP */
@@ -223,7 +223,7 @@ void sr_handlepacket(struct sr_instance* sr,
             fprintf(stderr, "Failed to parse ARP header, insufficient length\n");
         } else {
             /* Handle ARP packet here */
-            print_hdrs(packet, len); 
+            /*print_hdrs(packet, len);*/ 
 
             sr_arp_hdr_t* arphdr = (sr_arp_hdr_t*)(packet + sizeof(sr_ethernet_hdr_t));
             switch (ntohs(arphdr->ar_op)) {
@@ -248,7 +248,7 @@ void sr_handlepacket(struct sr_instance* sr,
                     memcpy(arphdr->ar_tha, arphdr->ar_sha, sizeof(char) * ETHER_ADDR_LEN);
                     memcpy(arphdr->ar_sha, iniface->addr, sizeof(char) * ETHER_ADDR_LEN);
 
-                    print_hdrs(packet, len); 
+                    /*print_hdrs(packet, len);*/ 
 
                     sr_send_packet(sr, packet, len, interface);
                 }
@@ -268,7 +268,7 @@ void sr_handlepacket(struct sr_instance* sr,
                         memcpy(newetherhdr->ether_dhost, arphdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
                         memcpy(newetherhdr->ether_shost, arphdr->ar_tha, sizeof(uint8_t) * ETHER_ADDR_LEN);
                            
-                        print_hdrs(pkt->buf, pkt->len);
+                        /*print_hdrs(pkt->buf, pkt->len);*/
 
                         sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
                         pkt = nextPkt;
