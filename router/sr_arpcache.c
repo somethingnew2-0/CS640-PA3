@@ -87,7 +87,11 @@ void send_icmp_message(struct sr_instance *sr, struct sr_packet * pkt, uint8_t t
     	sr_send_packet(sr, buf, packetSize, interface->name);
 
 	    free(arpentry);
-    } else {
+    } 
+    else if(type == 3 && code == 1) {
+	sr_send_packet(sr, buf, packetSize, interface->name);
+    }
+    else {
 	    struct sr_arpreq* req = sr_arpcache_queuereq(&sr->cache, ipHdr->ip_dst, buf, packetSize, pkt->iface, pkt->iniface);
     	handle_arpreq(sr, req);
     }
